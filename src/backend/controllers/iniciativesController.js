@@ -18,7 +18,7 @@ class iniciativesController {
             const iniciative = await Iniciatives.findById(id)
 
             if(!iniciative){
-                return res.status(404).json()
+                return res.status(404).json({message: `Iniciative with id ${id} not found.`})
             }
 
             return res.json(iniciative)
@@ -55,12 +55,12 @@ class iniciativesController {
             const iniciative = await Iniciatives.findById(id)
 
             if(!iniciative){
-                return res.status(404).json()
+                return res.status(404).json({message: `Iniciative with id ${id} not found.`})
             }
 
             iniciative.deleteOne()
 
-            return res.status(200).json()
+            return res.status(200).json({message: `Iniciative with id ${id} deleted successfully.`})
         } catch (error) {
             console.error(error);
             return res.status(500).json({error: "Internal server error."})
