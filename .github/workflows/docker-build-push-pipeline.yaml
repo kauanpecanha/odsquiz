@@ -14,7 +14,7 @@ env:
   PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
   REGISTRY_LOCATION: ${{ vars.GCP_REGISTRY_LOCATION }}
   REGISTRY_REPOSITORY: ${{ vars.GCP_REGISTRY_REPOSITORY }}
-  IMAGE_NAME: ${{ vars.GCP_REGISTRY_APPLICATION_NAME }}
+  IMAGE_NAME: ${{ github.event.repository.name }}
 
 jobs:
   publish:
