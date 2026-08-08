@@ -42,6 +42,7 @@ jobs:
   manage:
     name: ${{ inputs.action }} billable infrastructure
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - name: Validate requested action
@@ -60,6 +61,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
