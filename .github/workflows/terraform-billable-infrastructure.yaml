@@ -1,0 +1,156 @@
+name: Manage Billable Terraform Infrastructure
+
+on:
+  workflow_call:
+    inputs:
+      action:
+        description: "Lifecycle action: start or stop."
+        required: true
+        type: string
+      stop_confirmation:
+        description: "Must be DESTROY_BILLABLE_INFRASTRUCTURE when action is stop."
+        required: false
+        default: ""
+        type: string
+      project_id:
+        description: "Google Cloud project that contains the Terraform state and resources."
+        required: true
+        type: string
+      workload_identity_provider:
+        description: "Workload Identity Provider resource name used for GitHub OIDC."
+        required: true
+        type: string
+      service_account:
+        description: "Google service account to impersonate."
+        required: true
+        type: string
+      cloudflare_token_secret:
+        description: "Secret Manager secret that contains the Cloudflare Terraform API token."
+        required: false
+        default: "CLOUDFLARE_TERRAFORM_TOKEN"
+        type: string
+      terraform_version:
+        description: "Terraform CLI version."
+        required: false
+        default: "1.11.4"
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: terraform-billable-infrastructure-${{ inputs.project_id }}
+  cancel-in-progress: false
+
+jobs:
+  manage:
+    name: ${{ inputs.action }} billable infrastructure
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate requested action
+        env:
+          ACTION: ${{ inputs.action }}
+          STOP_CONFIRMATION: ${{ inputs.stop_confirmation }}
+        run: |
+          set -euo pipefail
+          case "$ACTION" in
+            start) ;;
+            stop)
+              test "$STOP_CONFIRMATION" = "DESTROY_BILLABLE_INFRASTRUCTURE" || {
+                echo "Stopping requires stop_confirmation=DESTROY_BILLABLE_INFRASTRUCTURE." >&2
+                exit 1
+              }
+              ;;
+            *)
+              echo "action must be start or stop." >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+          terraform_wrapper: false
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ inputs.workload_identity_provider }}
+          service_account: ${{ inputs.service_account }}
+
+      - name: Retrieve Cloudflare token from Secret Manager
+        env:
+          PROJECT_ID: ${{ inputs.project_id }}
+          SECRET_NAME: ${{ inputs.cloudflare_token_secret }}
+        run: |
+          set -euo pipefail
+          token="$(gcloud secrets versions access latest --project="$PROJECT_ID" --secret="$SECRET_NAME")"
+          echo "::add-mask::$token"
+          echo "CLOUDFLARE_API_TOKEN=$token" >> "$GITHUB_ENV"
+
+      - name: Initialize and validate Terraform
+        run: |
+          set -euo pipefail
+          terraform init -input=false
+          terraform validate
+
+      - name: Apply selected billable resources
+        if: inputs.action == 'start'
+        run: |
+          set -euo pipefail
+          terraform plan -input=false -out=tfplan \
+            -target=google_cloud_run_v2_service.auth \
+            -target=google_cloud_run_v2_service.initiatives \
+            -target=google_cloud_run_v2_service.frontend \
+            -target=google_sql_user.app \
+            -target=google_sql_database.app \
+            -target=google_sql_database_instance.main \
+            -target=google_compute_global_address.odsquiz_lb \
+            -target=google_compute_region_network_endpoint_group.frontend \
+            -target=google_compute_region_network_endpoint_group.auth \
+            -target=google_compute_region_network_endpoint_group.initiatives \
+            -target=google_compute_backend_service.frontend \
+            -target=google_compute_backend_service.auth \
+            -target=google_compute_backend_service.initiatives \
+            -target=google_compute_url_map.odsquiz \
+            -target=google_compute_url_map.odsquiz_https_redirect \
+            -target=google_compute_managed_ssl_certificate.odsquiz \
+            -target=google_compute_target_http_proxy.odsquiz \
+            -target=google_compute_target_https_proxy.odsquiz \
+            -target=google_compute_global_forwarding_rule.odsquiz_http \
+            -target=google_compute_global_forwarding_rule.odsquiz_https \
+            -target=cloudflare_dns_record.custom_domain
+          terraform apply -input=false -auto-approve tfplan
+
+      - name: Destroy selected billable resources
+        if: inputs.action == 'stop'
+        run: |
+          set -euo pipefail
+          terraform plan -destroy -input=false -out=tfplan \
+            -target=google_cloud_run_v2_service.auth \
+            -target=google_cloud_run_v2_service.initiatives \
+            -target=google_cloud_run_v2_service.frontend \
+            -target=google_sql_user.app \
+            -target=google_sql_database.app \
+            -target=google_sql_database_instance.main \
+            -target=google_compute_global_address.odsquiz_lb \
+            -target=google_compute_region_network_endpoint_group.frontend \
+            -target=google_compute_region_network_endpoint_group.auth \
+            -target=google_compute_region_network_endpoint_group.initiatives \
+            -target=google_compute_backend_service.frontend \
+            -target=google_compute_backend_service.auth \
+            -target=google_compute_backend_service.initiatives \
+            -target=google_compute_url_map.odsquiz \
+            -target=google_compute_url_map.odsquiz_https_redirect \
+            -target=google_compute_managed_ssl_certificate.odsquiz \
+            -target=google_compute_target_http_proxy.odsquiz \
+            -target=google_compute_target_https_proxy.odsquiz \
+            -target=google_compute_global_forwarding_rule.odsquiz_http \
+            -target=google_compute_global_forwarding_rule.odsquiz_https
+          terraform apply -input=false -auto-approve tfplan
