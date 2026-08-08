@@ -7,11 +7,6 @@ on:
         description: "Lifecycle action: start or stop."
         required: true
         type: string
-      stop_confirmation:
-        description: "Must be DESTROY_BILLABLE_INFRASTRUCTURE when action is stop."
-        required: false
-        default: ""
-        type: string
       project_id:
         description: "Google Cloud project that contains the Terraform state and resources."
         required: true
@@ -52,17 +47,11 @@ jobs:
       - name: Validate requested action
         env:
           ACTION: ${{ inputs.action }}
-          STOP_CONFIRMATION: ${{ inputs.stop_confirmation }}
         run: |
           set -euo pipefail
           case "$ACTION" in
             start) ;;
-            stop)
-              test "$STOP_CONFIRMATION" = "DESTROY_BILLABLE_INFRASTRUCTURE" || {
-                echo "Stopping requires stop_confirmation=DESTROY_BILLABLE_INFRASTRUCTURE." >&2
-                exit 1
-              }
-              ;;
+            stop) ;;
             *)
               echo "action must be start or stop." >&2
               exit 1
